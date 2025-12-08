@@ -1,0 +1,346 @@
+--Step 1
+-- here we look for monthly AOV for the last six moths
+
+WITH m AS (SELECT o.order_id,
+ o.order_status,c.customer_id,
+c.customer_city,c.customer_state,
+o.order_purchase_timestamp
+FROM career_nub.ecomm_customers_dataset c
+LEFT JOIN career_nub.ecomm_orders_dataset o
+ON c.customer_id = o.customer_id
+WHERE EXTRACT(YEAR FROM o.order_purchase_timestamp) = 2018
+AND o.order_status = 'delivered'
+)
+SELECT
+    AVG(p.payment_value) FILTER (WHERE EXTRACT(MONTH FROM m.order_purchase_timestamp) = 1) AS jan,
+    AVG(p.payment_value) FILTER (WHERE EXTRACT(MONTH FROM m.order_purchase_timestamp) = 2) AS feb,
+    AVG(p.payment_value) FILTER (WHERE EXTRACT(MONTH FROM m.order_purchase_timestamp) = 3) AS mar,
+    AVG(p.payment_value) FILTER (WHERE EXTRACT(MONTH FROM m.order_purchase_timestamp) = 4) AS apr,
+    AVG(p.payment_value) FILTER (WHERE EXTRACT(MONTH FROM m.order_purchase_timestamp) = 5) AS may,
+    AVG(p.payment_value) FILTER (WHERE EXTRACT(MONTH FROM m.order_purchase_timestamp) = 6) AS jun
+FROM m
+LEFT JOIN career_nub.ecomm_order_payments_dataset p
+    ON m.order_id = p.order_id
+WHERE p.payment_value IS NOT NULL
+
+
+  --Step 2
+-- CTE "m" aggregates monthly order volumes and compares performance 
+-- of each month in 2018. Only delivered orders are included.
+
+  SELECT
+          -- Extract month number from order timestamp
+  EXTRACT(MONTH FROM order_purchase_timestamp) AS month,
+        -- Count delivered orders for 2018  
+  COUNT(*) FILTER (WHERE EXTRACT(YEAR FROM order_purchase_timestamp) = 2018) AS total_orders_2018
+    FROM career_nub.ecomm_orders_dataset
+    WHERE order_status = 'delivered' -- Only completed orders matter for demand analysis
+    GROUP BY EXTRACT(MONTH FROM order_purchase_timestamp)
+    ORDER BY EXTRACT(MONTH FROM order_purchase_timestamp) ASC
+
+
+  -- Step 3
+-- Calculate monthly revenue approximation:
+-- Formula used: AVG(payment_value) * COUNT(customer_id) per month
+-- This gives an estimated revenue trend based on average payment size 
+-- multiplied by the number of customers who purchased in each month in 2018.
+
+WITH m AS (SELECT o.order_id,
+ o.order_status,c.customer_id,
+c.customer_city,c.customer_state,
+o.order_purchase_timestamp
+FROM career_nub.ecomm_customers_dataset c
+LEFT JOIN career_nub.ecomm_orders_dataset o
+ON c.customer_id = o.customer_id
+WHERE EXTRACT(YEAR FROM o.order_purchase_timestamp) = 2018
+AND o.order_status = 'delivered'
+)
+SELECT
+    AVG(p.payment_value) * COUNT(m.customer_id) 
+        FILTER (WHERE EXTRACT(MONTH FROM m.order_purchase_timestamp) = 1) AS jan,
+    AVG(p.payment_value) * COUNT(m.customer_id) 
+        FILTER (WHERE EXTRACT(MONTH FROM m.order_purchase_timestamp) = 2) AS feb,
+    AVG(p.payment_value) * COUNT(m.customer_id) 
+        FILTER (WHERE EXTRACT(MONTH FROM m.order_purchase_timestamp) = 3) AS mar,
+    AVG(p.payment_value) * COUNT(m.customer_id) 
+        FILTER (WHERE EXTRACT(MONTH FROM m.order_purchase_timestamp) = 4) AS apr,
+    AVG(p.payment_value) * COUNT(m.customer_id) 
+        FILTER (WHERE EXTRACT(MONTH FROM m.order_purchase_timestamp) = 5) AS may,
+    AVG(p.payment_value) * COUNT(m.customer_id) 
+        FILTER (WHERE EXTRACT(MONTH FROM m.order_purchase_timestamp) = 6) AS jun
+FROM m
+LEFT JOIN career_nub.ecomm_order_payments_dataset p
+    ON m.order_id = p.order_id
+WHERE p.payment_value IS NOT NULL
+
+
+  -- Step 4
+-- CTE "m": join customers and orders.
+-- Keep only delivered orders from 2018 to analyze actual revenue activity.
+WITH m AS (
+    SELECT 
+        o.order_id,
+        o.order_status,
+        c.customer_id,
+        c.customer_unique_id,
+        c.customer_city,
+        c.customer_state,
+        o.order_purchase_timestamp
+    FROM career_nub.ecomm_customers_dataset c
+    LEFT JOIN career_nub.ecomm_orders_dataset o
+        ON c.customer_id = o.customer_id
+    WHERE EXTRACT(YEAR FROM o.order_purchase_timestamp) = 2018
+      AND o.order_status = 'delivered'
+),
+-- CTE "d": calculate total payment value per state.
+-- FILTER is used to isolate revenue for January and February.
+-- These two months are selected to compare early-year performance.
+d AS (
+    SELECT 
+        m.customer_state,
+
+        -- Total revenue in January (baseline for comparison)
+        SUM(p.payment_value) FILTER (
+            WHERE EXTRACT(MONTH FROM m.order_purchase_timestamp) = 1
+        ) AS jan,
+
+        -- Total revenue in February
+        SUM(p.payment_value) FILTER (
+            WHERE EXTRACT(MONTH FROM m.order_purchase_timestamp) = 2
+        ) AS feb
+
+    FROM m
+    LEFT JOIN career_nub.ecomm_order_payments_dataset p
+        ON m.order_id = p.order_id
+    WHERE p.payment_value IS NOT NULL  -- exclude missing or invalid payments
+    GROUP BY m.customer_state
+),
+-- CTE "y": classify states by revenue trend.
+-- If February revenue is lower than January → mark as "decline".
+y AS (
+    SELECT 
+        d.customer_state,
+        d.jan,
+        d.feb,
+        CASE 
+            WHEN d.jan > d.feb THEN 'decline'   -- only interested in revenue decrease
+            ELSE 'increase'
+        END AS tendency
+    FROM d
+)
+-- Final output:
+-- Show only states with a decline and where the decline is significant:
+-- revenue in January is more than 1.5x higher than in February.
+SELECT 
+    y.*,
+    y.jan / y.feb AS jan_vs_feb
+FROM y 
+WHERE y.tendency = 'decline'
+  AND y.jan / y.feb > 1.5;  -- filter to highlight meaningful decreases only
+
+
+-- Step 5
+-- CTE "m": join customers and orders.
+-- Keep only delivered orders from 2018 to analyze actual realized revenue.
+WITH m AS (
+    SELECT 
+        o.order_id,
+        o.order_status,
+        c.customer_id,
+        c.customer_unique_id,
+        c.customer_city,
+        c.customer_state,
+        o.order_purchase_timestamp
+    FROM career_nub.ecomm_customers_dataset c
+    LEFT JOIN career_nub.ecomm_orders_dataset o
+        ON c.customer_id = o.customer_id
+    WHERE EXTRACT(YEAR FROM o.order_purchase_timestamp) = 2018
+      AND o.order_status = 'delivered'
+),
+-- CTE "d": filter to January and February and a subset of states.
+-- Add helper columns for date (day) and month to enable time-based analysis.
+d AS (
+    SELECT 
+        m.customer_state,
+        m.order_purchase_timestamp,
+        DATE(m.order_purchase_timestamp) AS days,                 -- calendar day
+        EXTRACT(MONTH FROM m.order_purchase_timestamp) AS month,  -- month number
+        p.payment_value
+    FROM m
+    LEFT JOIN career_nub.ecomm_order_payments_dataset p
+        ON m.order_id = p.order_id
+    WHERE p.payment_value IS NOT NULL
+      AND EXTRACT(MONTH FROM m.order_purchase_timestamp) IN (1, 2)      -- focus on Jan & Feb
+      AND m.customer_state IN ('AC', 'AL', 'AP', 'PA', 'PB')            -- focus on selected states
+    ORDER BY DATE(m.order_purchase_timestamp) ASC
+),
+-- CTE "o": calculate total monthly revenue (across all selected states)
+-- using a window function, and keep payment value per day/state.
+o AS (
+    SELECT 
+        d.customer_state,
+        d.days,
+        d.payment_value,
+        SUM(d.payment_value) OVER (PARTITION BY d.month) AS total_by_month  -- total revenue per month
+    FROM d
+),
+-- CTE "r": compute the share of each payment in total monthly revenue (in %).
+r AS (
+    SELECT 
+        o.customer_state,
+        o.days,
+        o.payment_value,
+        (o.payment_value / o.total_by_month) * 100 AS month_pr,  -- percentage of monthly total
+        o.total_by_month
+    FROM o
+)
+-- Final selection:
+-- Classify each payment as "low" or "high" contribution to the monthly total
+-- based on whether it is below or above 2% of the month’s revenue.
+SELECT 
+    r.customer_state,
+    r.days,
+    r.payment_value,
+    r.month_pr,
+    CASE 
+        WHEN r.month_pr < 2 THEN 'low'
+        ELSE 'high'
+    END AS pr_from_total,
+    r.total_by_month
+FROM r;
+
+
+--Step 6
+---- Identify and count "small checks" (very low-value payments) 
+--in selected states.
+-- CTE "m": join customers and orders.
+-- Keep only delivered orders from 2018 to analyze actual realized revenue.
+WITH m AS (
+    SELECT 
+        o.order_id,
+        o.order_status,
+        c.customer_id,
+        c.customer_unique_id,
+        c.customer_city,
+        c.customer_state,
+        o.order_purchase_timestamp
+    FROM career_nub.ecomm_customers_dataset c
+    LEFT JOIN career_nub.ecomm_orders_dataset o
+        ON c.customer_id = o.customer_id
+    WHERE EXTRACT(YEAR FROM o.order_purchase_timestamp) = 2018
+      AND o.order_status = 'delivered'
+),
+
+-- CTE "d": filter to January and February and a subset of states.
+-- Add helper columns for date (day) and month to enable time-based analysis.
+d AS (
+    SELECT 
+        m.customer_state,
+        m.order_purchase_timestamp,
+        DATE(m.order_purchase_timestamp) AS days,                 -- calendar day
+        EXTRACT(MONTH FROM m.order_purchase_timestamp) AS month,  -- month number
+        p.payment_value
+    FROM m
+    LEFT JOIN career_nub.ecomm_order_payments_dataset p
+        ON m.order_id = p.order_id
+    WHERE p.payment_value IS NOT NULL
+      AND EXTRACT(MONTH FROM m.order_purchase_timestamp) IN (1, 2)      -- focus on Jan & Feb
+      AND m.customer_state IN ('AC', 'AL', 'AP', 'PA', 'PB')            -- focus on selected states
+    ORDER BY DATE(m.order_purchase_timestamp) ASC
+),
+-- CTE "o": calculate total monthly sum (across all selected states)
+-- using a window function, and keep payment value per day/state.
+o AS (
+    SELECT 
+        d.customer_state,
+        d.days,
+        d.payment_value,
+        SUM(d.payment_value) OVER (PARTITION BY d.month) AS total_by_month  -- total sum per month
+    FROM d
+),
+-- CTE "r": compute the share of each payment (in %).
+r AS (
+    SELECT 
+        o.customer_state,
+        o.days,
+        o.payment_value,
+        (o.payment_value / o.total_by_month) * 100 AS month_pr,  -- percentage of monthly total
+        o.total_by_month
+    FROM o
+)
+-- Final selection:
+-- Classify each payment as "low" or "high" contribution to the monthly total
+-- based on whether it is below or above 2% of the month’s revenue.
+SELECT 
+    r.customer_state,
+    r.days,
+    r.payment_value,
+    r.month_pr,
+    CASE 
+        WHEN r.month_pr < 2 THEN 'low'
+        ELSE 'high'
+    END AS pr_from_total,
+    r.total_by_month
+FROM r;
+
+
+-- Step 7
+-- Analyze the distribution of payment types in February for selected states.
+-- We want to understand which payment methods customers prefer and whether
+-- the structure of payments may influence revenue performance. 
+-- The output shows the percentage of orders paid by each method
+-- (credit_card, boleto, voucher, debit_card) within each state.
+
+WITH m AS (
+    -- Join customers with orders; keep only delivered orders from 2018.
+    SELECT 
+        o.order_id,
+        o.order_status,
+        c.customer_id,
+        c.customer_city,
+        c.customer_state,
+        o.order_purchase_timestamp
+    FROM career_nub.ecomm_customers_dataset c 
+    LEFT JOIN career_nub.ecomm_orders_dataset o
+        ON c.customer_id = o.customer_id
+    WHERE EXTRACT(YEAR FROM o.order_purchase_timestamp) = 2018
+      AND o.order_status = 'delivered'
+),
+
+d AS (
+    -- Join with payments; restrict to February.
+    -- Keep payment value and payment type for analysis.
+    SELECT 
+        m.customer_state,
+        m.customer_city,
+        m.order_purchase_timestamp,
+        p.payment_value,
+        p.payment_type
+    FROM m 
+    LEFT JOIN career_nub.ecomm_order_payments_dataset p 
+        ON m.order_id = p.order_id
+    WHERE p.payment_value IS NOT NULL
+      AND EXTRACT(MONTH FROM m.order_purchase_timestamp) = 2   -- February only
+)
+
+-- Final output:
+-- Calculate the share (%) of each payment type per state.
+SELECT 
+    d.customer_state, 
+    COUNT(*) AS total_orders,
+
+    -- Percentage of orders paid by credit card
+    ROUND(100.0 * COUNT(*) FILTER (WHERE d.payment_type = 'credit_card') / COUNT(*), 1) AS credit_card_pct,
+
+    -- Percentage of orders paid by boleto
+    ROUND(100.0 * COUNT(*) FILTER (WHERE d.payment_type = 'boleto') / COUNT(*), 1) AS boleto_pct,
+
+    -- Percentage of orders paid by voucher
+    ROUND(100.0 * COUNT(*) FILTER (WHERE d.payment_type = 'voucher') / COUNT(*), 1) AS voucher_pct,
+
+    -- Percentage of orders paid by debit card
+    ROUND(100.0 * COUNT(*) FILTER (WHERE d.payment_type = 'debit_card') / COUNT(*), 1) AS debit_card_pct
+
+FROM d
+WHERE d.customer_state IN ('AC','AL','AP','PA','PB')   -- selected states
+GROUP BY d.customer_state;
