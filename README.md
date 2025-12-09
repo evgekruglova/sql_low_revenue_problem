@@ -26,14 +26,18 @@ The file sql_ commands includes 7 steps which help us to draw insights from the 
 ✅ **Step 1 — Monthly AOV (Average Order Value)**
 
 What we do: Calculate the average order value for each month (Jan–Jun 2018) using only delivered orders.
+
 Why: To check whether revenue drops are caused by changes in average order size.
+
 Insight: AOV dips slightly in February and May, but overall 
 remains stable — meaning the revenue decline is not caused by smaller order amounts.
 
 ✅ **Step 2 — Monthly Order Volume (2018)**
 
 What we do: Count how many delivered orders were placed each month in 2018.
+
 Why: To understand demand fluctuations and identify weak months.
+
 Insight: Overall order volume in 2018 is much higher than in 2017, 
 but February and June show clear drops — these months require deeper investigation.
 
@@ -41,34 +45,44 @@ but February and June show clear drops — these months require deeper investiga
 
 What we do: Estimate revenue per month using the formula:
 AVG(payment_value) * COUNT(customer_id)
+
 Why: To combine AOV and order volume and visualize total revenue trends.
+
 Insight: Revenue sharply declines in February and June. 
 These declines are driven mainly by fewer orders, not by lower AOV.
 
 ✅ **Step 4 — State-Level Decline (January vs February)**
 
 What we do: Compare revenue per state between January and February and identify states with strong declines (>1.5×).
+
 Why: To locate geographic segments that contribute most to the revenue drop.
+
 Insight: States AC, AL, AP, PA, PB show significant declines. 
 Many orders in these states contribute less than 2% of monthly revenue, indicating a long tail of very small transactions.
 
 ✅ **Step 5 — Checking Small Payments (January vs February)**
 
 What we do: Measure what percentage each payment contributes to monthly totals, classify them as “low” (<2%) or “high,” and examine distribution.
+
 Why: To determine whether February’s drop is caused by many low-value orders.
+
 Insight: February contains a higher share of very small payments; combined with fewer orders overall, this explains the revenue decline.
 
 ✅ **Step 6 — Small Payments in May vs June**
 
 What we do: Count low-value payments in May and June and compare.
+
 Why: To see whether June’s decline is also driven by small checks.
+
 Insight: June has more low-value transactions than May despite higher AOV — 
 confirming that the issue is again too many small orders and fewer total orders.
 
 ✅ **Step 7 — Payment Type Distribution (February)**
 
 What we do: Calculate the percentage of each payment type (credit card, boleto, voucher, debit card) per state.
+
 Why: To check whether payment methods influence revenue decline.
+
 Insight: Credit card dominates in both good and bad months; payment type structure is almost identical.
 ➡️ Conclusion: Payment type is not a driver of revenue decline.
 
